@@ -10,9 +10,12 @@ max_distance_between_points: int = 100
 
 
 class Counter:
+    class_map = {1: "bicycle", 2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
+
     def __init__(self, video_path, show_image=False):
         self.video_path = video_path
         self.model = torch.hub.load('ultralytics/yolov5', 'yolov5s')
+        self.model.classes = [1, 2, 3, 5, 7]  # bicycle, car, motorcycle, bus, truck
         self.show_image = show_image
         self.tracker = Tracker(
             distance_function=self.euclidean_distance,
@@ -32,12 +35,15 @@ class Counter:
 
         batch = []
 
+        counter = {}
+        totals = {}
+
         while capture.isOpened():
             ret, frame = capture.read()
             i += 1
-            # take only every 8th frame
-            if i % 8 != 0:
-                continue
+            # take only every 2th frame
+            #if i % 2 != 0:
+             #   continue
 
             if ret:
                 batch.append(frame)
@@ -46,9 +52,22 @@ class Counter:
                     continue
 
                 results = self.model(batch, size=320)
-                for i in range(0, 7):
-                    detections = self.yolo_detections_to_norfair_detections(results, i)
-                    tracked_objects = self.tracker.update(detections=detections)
+                detections = self.yolo_detections_to_norfair_detections(results.tolist())
+
+                for detection in detections:
+                    tracked_objects = self.tracker.update(detections=detection)
+                    for tracked_object in tracked_objects:
+                        if tracked_object.id in counter:
+                            if counter[tracked_object.id][1] < tracked_object.last_detection.scores[0]:
+                                counter[tracked_object.id] = (tracked_object.last_detection.data, tracked_object
+                                                              .last_detection
+                                                              .scores[0])
+                        else:
+                            counter[tracked_object.id] = (tracked_object.last_detection.data, tracked_object
+                                                          .last_detection
+                                                          .scores[0])
+
+                    print(totals)
                     norfair.print_objects_as_table(tracked_objects)
                 results.print()
                 if self.show_image:
@@ -61,41 +80,29 @@ class Counter:
         capture.release()
         cv2.destroyAllWindows()
 
-    def yolo_detections_to_norfair_detections(self,
-                                              yolo_detections: torch.tensor,
-                                              i: int,
-                                              track_points: str = 'centroid',  # bbox or centroid
-                                              ) -> List[Detection]:
+        for key, value in counter.items():
+            totals[value[0]] = totals.get(value[0], 0) + 1
+        for key in totals:
+            print(self.class_map[key] + ":" + str(totals[key]))
+
+    @staticmethod
+    def yolo_detections_to_norfair_detections(yolo_detections: []) -> List[List[Detection]]:
         """convert detections_as_xywh to norfair detections
         """
-        norfair_detections: List[Detection] = []
+        norfair_detections: List[List[Detection]] = [[]]
 
-        if track_points == 'centroid':
-            detections_as_xywh = yolo_detections.xywh[i]
-            for detection_as_xywh in detections_as_xywh:
+        for yolo_detection in yolo_detections:
+            tmp: List[Detection] = []
+            for xywh in yolo_detection.xywh:
                 centroid = np.array(
                     [
-                        detection_as_xywh[0].item(),
-                        detection_as_xywh[1].item()
+                        xywh[0].item(),
+                        xywh[1].item()
                     ]
                 )
-                scores = np.array([detection_as_xywh[4].item()])
-                norfair_detections.append(
-                    Detection(points=centroid, scores=scores)
-                )
-        elif track_points == 'bbox':
-            detections_as_xyxy = yolo_detections.xyxy[i]
-            for detection_as_xyxy in detections_as_xyxy:
-                bbox = np.array(
-                    [
-                        [detection_as_xyxy[0].item(), detection_as_xyxy[1].item()],
-                        [detection_as_xyxy[2].item(), detection_as_xyxy[3].item()]
-                    ]
-                )
-                scores = np.array([detection_as_xyxy[4].item(), detection_as_xyxy[4].item()])
-                norfair_detections.append(
-                    Detection(points=bbox, scores=scores)
-                )
+                scores = np.array([xywh[4].item()])
+                tmp.append(Detection(points=centroid, scores=scores, data=xywh[5].item()))
+            norfair_detections.append(tmp)
 
         return norfair_detections
 
