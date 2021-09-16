@@ -23,10 +23,8 @@ max_distance_between_points: int = 200
 
 class Counter:
     class_map = {1: "bicycle", 2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
-    counter = {"bicycles": set(), "cars": set(), "motorcycles": set(), "buses": set(), "trucks": set()}
-    log = logging.getLogger(__name__)
 
-    current_pos_in_ms = 0
+    log = logging.getLogger(__name__)
 
     def __init__(self, video_path, show_image=False):
         with open("config.yaml", "r") as ymlfile:
@@ -38,8 +36,10 @@ class Counter:
         self.model.classes = [1, 2, 3, 5, 7]  # bicycle, car, motorcycle, bus, truck
         self.names = self.model.module.names if hasattr(self.model, 'module') else self.model.names
         self.show_image = show_image
+        self.counter = {"bicycles": set(), "cars": set(), "motorcycles": set(), "buses": set(), "trucks": set()}
         ffprobe = FFProbe(self.video_path)
         self.creation_time = parse(ffprobe.metadata['creation_time'])
+        self.current_pos_in_ms = 0
         self.car_tracker = Tracker(
             distance_function=self.euclidean_distance,
             distance_threshold=max_distance_between_points,
@@ -80,15 +80,14 @@ class Counter:
         pbar = tqdm(total=frames, position=0)
         while capture.more():
             frame = capture.read()
-            self.current_pos_in_ms = capture.stream.get(cv2.CAP_PROP_POS_MSEC)
             frame_count += 1
-            pbar.update()
-            self.log.info("Frame %s/%s" % (frame_count, frames))
-
             if frame is None:
                 self.log.error("img0 is None")
                 break
 
+            self.current_pos_in_ms = (frame_count / fps) * 1000
+            pbar.update()
+            self.log.info("Frame %s/%s" % (frame_count, frames))
             if frame is not None and frame0 is not None:
                 diff = np.sum(np.absolute(frame - frame0)) / np.size(frame)
                 self.log.debug("difference:" + str(diff))
@@ -134,7 +133,9 @@ class Counter:
 
     def write_to_db(self):
         creation_time_masked = self.floor_datetime_to_minutes(self.creation_time)
-        video_length_in_min = self.duration_in_ms / 1000 / 60
+        logging.info(creation_time_masked)
+        video_length_in_min = int(self.duration_in_ms / 1000 / 60)
+        logging.info(video_length_in_min)
         dti = pd.date_range(creation_time_masked, periods=video_length_in_min + 1, freq="1min")
         df = pd.DataFrame(index=dti, columns=["bicycles", "cars", "motorcycles", "buses", "trucks"])
         df = df.fillna(0)
@@ -143,6 +144,7 @@ class Counter:
 
         for index, row in counter_as_panda.iterrows():
             for occurrence in row.dropna():
+                logging.info("detection ts:" + str(occurrence.detection_ts))
                 datetime_masked = self.floor_datetime_to_minutes(occurrence.detection_ts)
                 df.loc[datetime_masked][index] += 1
 
@@ -158,6 +160,7 @@ class Counter:
         for key, value in tqdm(data.items()):
             vehicle_collection.insert_one({"timestamp": key, "count": value})
         logging.info("Finished writing to mongodb")
+        logging.info("Wrote " + str(len(data.items())) + " data sets")
         session.stop()
 
     def yolo_detections_to_norfair_detections(self, yolo_detections) -> List[Detection]:
@@ -243,6 +246,7 @@ class Counter:
 
     @staticmethod
     def floor_datetime_to_minutes(datetime: datetime):
+        logging.warning("floor datetime to minutes" + str(datetime))
         return np.datetime64(datetime - timedelta(minutes=datetime.minute % 1,
                                                   seconds=datetime.second,
                                                   microseconds=datetime.microsecond), 'ns')
