@@ -102,18 +102,16 @@ class Counter:
             # Inference
             results = self.model(img, 320)
 
-            # display images with box
-            rendered_imgs = results.render()
-
             if results.n > 0 and results.pred[0].numel() != 0:
                 self.log.info(results.pandas().xywh[0])
+                self.tracked_objects = self.yolo_detections_to_norfair_detections(results.xywh[0])
 
-                tracked_objects = self.yolo_detections_to_norfair_detections(results.xywh[0])
-                draw_tracked_objects(rendered_imgs[0], tracked_objects)
-
-            for rendered_img in rendered_imgs:
-                cv2.imshow("frame", rendered_img)
             if self.show_image:
+                # display images with box
+                rendered_images = results.render()
+                draw_tracked_objects(rendered_images[0], self.tracked_objects)
+                for rendered_img in rendered_images:
+                    cv2.imshow("frame", rendered_img)
                 for i, det in enumerate(results):
                     for *xyxy, conf, cls in det:
                         # Add bbox to image
@@ -246,7 +244,7 @@ class Counter:
 
     @staticmethod
     def floor_datetime_to_minutes(datetime: datetime):
-        logging.warning("floor datetime to minutes" + str(datetime))
+        logging.debug("floor datetime to minutes" + str(datetime))
         return np.datetime64(datetime - timedelta(minutes=datetime.minute % 1,
                                                   seconds=datetime.second,
                                                   microseconds=datetime.microsecond), 'ns')
