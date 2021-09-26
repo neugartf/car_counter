@@ -148,11 +148,14 @@ class Counter:
 
         data = df.to_dict("index")
 
-        session = MongoSession(self.cfg["mongodb"]["host"], user=self.cfg["mongodb"]["user"],
-                               key_password=self.cfg["mongodb"]["password"],
-                               key=self.cfg["mongodb"]["key_path"])
+        session = MongoSession(host=self.cfg["mongodb"]["host"],
+                               user=self.cfg["mongodb"]["ssh_user"],
+                               key_password=self.cfg["mongodb"]["ssh_password"],
+                               key=self.cfg["mongodb"]["key_path"],
 
-        db = session.connection["vehicleCounterDB"]
+                               uri=self.cfg["mongodb"]["uri"],
+                              )
+        db = session.connection["car_counter_db"]
         logging.info("Connected to mongodb")
         vehicle_collection = db.get_collection("vehicles")
         for key, value in tqdm(data.items()):
