@@ -22,7 +22,6 @@ max_distance_between_points: int = 200
 
 
 class Counter:
-    class_map = {1: "bicycle", 2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
 
     log = logging.getLogger(__name__)
 
